@@ -18,11 +18,10 @@ class MainApp:
         self.topic_windows = {}
         self.opened_topics = set()
         self.active_topic_name = None
-        self.dashboard_count_topic = None
-        self.dashboard_count_finished = False
 
         self._build_menu()
         self._build_ui()
+        self._refresh_main_close_button_state()
 
     def _center_window(self):
         """Centra la ventana principal en pantalla al arrancar la app."""
@@ -130,8 +129,7 @@ class MainApp:
             pady=10,
             cursor="hand2",
         )
-        self.close_main_button.pack(side="bottom", anchor="e", padx=24, pady=20)
-        self.close_main_button.pack_forget()
+        self.close_main_button.pack(pady=(18, 20))
 
     def open_topic_window(self, topic_name: str):
         if topic_name in self.topic_windows and self.topic_windows[topic_name].is_alive():
@@ -141,33 +139,25 @@ class MainApp:
 
         self.root.update_idletasks()
 
-        # El dashboard solo cuenta una vez, usando la primera ventana abierta.
-        on_countdown_update = None
-        if self.dashboard_count_topic is None:
-            self.dashboard_count_topic = topic_name
-            on_countdown_update = self.update_main_countdown
-
+        # El dashboard se actualiza con cada ventana nueva abierta.
         topic_window = TopicWindow(
             self.root,
             topic_name,
             TOPICS[topic_name],
-            on_countdown_update=on_countdown_update,
+            on_countdown_update=self.update_main_countdown,
             on_window_closed=self.on_topic_closed,
         )
         self.topic_windows[topic_name] = topic_window
         self.opened_topics.add(topic_name)
         self.active_topic_name = topic_name
-
-        if len(self.opened_topics) == len(TOPICS):
-            self.close_main_button.pack(side="bottom", anchor="e", padx=24, pady=20)
+        self._refresh_main_close_button_state()
 
     def update_main_countdown(self, topic_name: str, seconds_left: int, unlocked: bool):
-        if topic_name != self.dashboard_count_topic or self.dashboard_count_finished:
+        """Actualiza el contador del dashboard solo si es la ventana activa (última abierta)."""
+        if topic_name != self.active_topic_name:
             return
 
-        self.active_topic_name = topic_name
         if unlocked:
-            self.dashboard_count_finished = True
             self.main_countdown_label.configure(text="0s")
             return
 
@@ -175,12 +165,54 @@ class MainApp:
 
     def on_topic_closed(self, topic_name: str):
         if self.active_topic_name == topic_name:
+            # Si se cierra la ventana activa, cambiar a otra abierta si existe.
             self.active_topic_name = None
+            for other_topic, window in self.topic_windows.items():
+                if window.is_alive():
+                    self.active_topic_name = other_topic
+                    break
+            # Limpiar el label si no hay más ventanas activas.
+            if self.active_topic_name is None:
+                self.main_countdown_label.configure(text="")
+        self._refresh_main_close_button_state()
+
+    def _has_locked_open_windows(self) -> bool:
+        """True si hay secundarias abiertas cuyo contador aun no termina."""
+        for topic_window in self.topic_windows.values():
+            if topic_window.is_alive() and not topic_window.is_close_unlocked():
+                return True
+        return False
+
+    def _refresh_main_close_button_state(self):
+        """Habilita o bloquea el boton rojo segun el estado de secundarias."""
+        if self._has_locked_open_windows():
+            self.close_main_button.configure(state=tk.DISABLED)
+        else:
+            self.close_main_button.configure(state=tk.NORMAL)
+
+        # Se repite para reflejar el avance de los contadores en tiempo real.
+        self.root.after(300, self._refresh_main_close_button_state)
 
     def request_main_close(self):
+        if self._has_locked_open_windows():
+            messagebox.showinfo(
+                "Cierre bloqueado",
+                "Debes esperar a que pasen los 10 segundos de las ventanas abiertas.",
+                parent=self.root,
+            )
+            return
+
+        if len(self.opened_topics) == len(TOPICS):
+            mensaje = (
+                "Ya abriste todas las ventanas secundarias.\n\n"
+                "Deseas cerrar la ventana principal?"
+            )
+        else:
+            mensaje = "Deseas cerrar el programa y todas sus ventanas?"
+
         confirm = messagebox.askyesno(
             "Confirmar cierre",
-            "Ya abriste todas las ventanas secundarias.\n\nDeseas cerrar la ventana principal?",
+            mensaje,
             parent=self.root,
         )
         if confirm:
