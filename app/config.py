@@ -27,7 +27,16 @@ TOPICS = {
 
 
 def validar_imagenes() -> list[str]:
-    """Regresa una lista con las rutas faltantes esperadas por la app."""
+    """
+    Valida que todas las imágenes de los temas existan en el directorio de imágenes.
+    
+    Recorre la configuración de TOPICS y verifica la existencia de cada archivo PNG.
+    Si alguno falta, lo agrega a la lista de faltantes.
+    
+    Retorna:
+        list[str]: Lista de rutas de archivos que están faltando. 
+                   Lista vacía si todas las imágenes existen.
+    """
     faltantes = []
     for ruta in TOPICS.values():
         if not ruta.exists():

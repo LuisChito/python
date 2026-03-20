@@ -10,7 +10,22 @@ from app.config import (
 )
 
 
-class TopicWindow:
+class VentanaTema:
+    """Ventana secundaria que muestra una imagen de un tema.
+    
+    La ventana implementa un contador de 10 segundos (CLOSE_DELAY_SECONDS) que bloquea
+    el cierre durante ese tiempo. Después de los 10 segundos, el usuario puede cerrar
+    la ventana normalmente. Mientras está contando, notifica a la ventana principal
+    del progreso del countdown.
+    
+    Atributos:
+        topic_name (str): Nombre del tema que se mostrará en la ventana.
+        image_path (Path): Ruta al archivo PNG de la imagen del tema.
+        allow_close (bool): Indica si la ventana puede ser cerrada (después de 10s).
+        seconds_left (int): Segundos restantes del contador al cierre.
+        on_countdown_update (callable): Callback para notificar cambios en el contador.
+        on_window_closed (callable): Callback para notificar cuando se cierra la ventana.
+    """
     def __init__(
         self,
         parent: tk.Tk,
@@ -45,7 +60,7 @@ class TopicWindow:
         self.window.minsize(CHILD_MIN_WIDTH, CHILD_MIN_HEIGHT)
         self.window.resizable(True, True)
 
-        self.window.protocol("WM_DELETE_WINDOW", self._on_system_close)
+        self.window.protocol("WM_DELETE_WINDOW", self._al_cerrar_ventana)
 
         self.bg_label = tk.Label(self.window, bd=0)
         self.bg_label.place(relx=0, rely=0, relwidth=1, relheight=1)
@@ -75,7 +90,7 @@ class TopicWindow:
         self.close_button = tk.Button(
             panel,
             text="Cerrar esta ventana",
-            command=self._close_with_button,
+            command=self._cerrar_con_boton,
             font=("Segoe UI", 10, "bold"),
             bg="#F0B429",
             fg="#102A43",
@@ -88,11 +103,15 @@ class TopicWindow:
         self.close_button.pack_forget()
 
         self.photo = None
-        self._load_background()
-        self._tick_countdown()
+        self._cargar_fondo()
+        self._contar_regresivo()
 
-    def _load_background(self):
-        """Carga la imagen del tema; si falla, muestra mensaje."""
+    def _cargar_fondo(self):
+        """Carga la imagen PNG del tema como fondo de la ventana.
+        
+        Si el archivo no existe o no puede ser leído como PNG, muestra
+        un mensaje de error centrado en la ventana en su lugar.
+        """
         if not self.image_path.exists():
             self.bg_label.configure(
                 text=f"No se encontro la imagen para: {self.topic_name}",
@@ -113,8 +132,12 @@ class TopicWindow:
                 font=("Segoe UI", 12, "bold"),
             )
 
-    def _enable_close_button(self):
-        # Al terminar el contador, la ventana queda desbloqueada para cierre.
+    def _habilitar_boton_cerrar(self):
+        """Habilita el cierre de la ventana después de que el contador llega a 0.
+        
+        Establece allow_close=True, muestra el botón de cierre, actualiza los
+        mensajes de la ventana y notifica a la ventana principal que se puede cerrar.
+        """
         self.allow_close = True
         self.close_button.pack(pady=(0, 8))
         self.info_label.configure(text="Ya puedes cerrar esta ventana con el boton.")
@@ -122,9 +145,15 @@ class TopicWindow:
         if self.on_countdown_update:
             self.on_countdown_update(self.topic_name, 0, True)
 
-    def _tick_countdown(self):
+    def _contar_regresivo(self):
+        """Ejecuta el contador regresivo de 10 segundos (CLOSE_DELAY_SECONDS).
+        
+        Se ejecuta recursivamente cada 1 segundo, actualizando el label
+        y notificando al callback on_countdown_update. Cuando llega a 0,
+        llama a _habilitar_boton_cerrar().
+        """
         if self.seconds_left <= 0:
-            self._enable_close_button()
+            self._habilitar_boton_cerrar()
             return
 
         self.countdown_label.configure(
@@ -133,9 +162,15 @@ class TopicWindow:
         if self.on_countdown_update:
             self.on_countdown_update(self.topic_name, self.seconds_left, False)
         self.seconds_left -= 1
-        self.window.after(1000, self._tick_countdown)
+        self.window.after(1000, self._contar_regresivo)
 
-    def _on_system_close(self):
+    def _al_cerrar_ventana(self):
+        """Maneja el evento del botón X (cerrar ventana del sistema).
+        
+        Si el contador ya terminó (allow_close=True), permite cerrar.
+        Si no, muestra un mensaje informado al usuario que debe esperar
+        los 10 segundos o usar el botón de cierre.
+        """
         if self.allow_close:
             self.window.destroy()
             return
@@ -146,22 +181,42 @@ class TopicWindow:
             parent=self.window,
         )
 
-    def _close_with_button(self):
+    def _cerrar_con_boton(self):
+        """Cierra la ventana y notifica al callback on_window_closed.
+        
+        Este método es llamado cuando el usuario hace clic en el botón
+        de cierre de la ventana secundaria (después de los 10 segundos).
+        """
         self.window.destroy()
         if self.on_window_closed:
             self.on_window_closed(self.topic_name)
 
-    def close_from_main(self):
-        """Permite cerrar desde el boton de la principal cuando esta desbloqueado."""
-        self._close_with_button()
+    def cerrar_desde_principal(self):
+        """Permite cerrar esta ventana desde la ventana principal.
+        
+        Se llama cuando el usuario cierra el programa completo,
+        una vez que todas las ventanas ya pasó el bloqueo de 10 segundos.
+        """
+        self._cerrar_con_boton()
 
-    def is_close_unlocked(self) -> bool:
+    def cierre_desbloqueado(self) -> bool:
+        """Indica si el cierre de esta ventana ya está desbloqueado (contador en 0).
+        
+        Retorna:
+            bool: True si ya pasaron los 10 segundos, False si aún está contando.
+        """
         return self.seconds_left <= 0
 
-    def focus(self):
+    def enfocar(self):
+        """Trae la ventana al frente y le da el foco de entrada."""
         self.window.deiconify()
         self.window.lift()
         self.window.focus_force()
 
-    def is_alive(self) -> bool:
+    def esta_viva(self) -> bool:
+        """Verifica si la ventana aún existe y no ha sido destruida.
+        
+        Retorna:
+            bool: True si la ventana existe, False si fue cerrada.
+        """
         return bool(self.window.winfo_exists())
